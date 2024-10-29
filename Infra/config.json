@@ -1,0 +1,67 @@
+{
+  "openai": {
+    "name": "aoai",
+    "api_version":"2023-07-01-preview",
+    "models": [
+      {
+        "name": "gpt-4o",
+        "model": {
+          "format": "OpenAI",
+          "name": "gpt-4o",
+          "version": "2024-08-06"
+        },
+        "sku": {
+          "name": "Standard",
+          "capacity": 20
+        }
+      },
+      {
+        "name": "text-embedding-ada-002",
+        "model": {
+          "format": "OpenAI",
+          "name": "text-embedding-ada-002",
+          "version": "2"
+        },
+        "sku": {
+          "name": "Standard",
+          "capacity": 20
+        }
+      }
+    ]
+  },
+  "search": {
+    "name": "aisearch",
+    "api_version":"2024-05-01-preview"
+  },
+  "formrecognizer": {
+    "name": "docintel"
+  },
+  "ml": {
+    "workspace_name": "aml",
+    "compute": {
+      "name": "vmsk",
+      "size": "Standard_D4a_v4",
+      "idle_time_before_shutdown_minutes": 30
+    }
+  },
+  "aml_ws_connections": {
+    "openai_connection": "aoai",
+    "aisearch_connection": "aisearch",
+    "document_intelligence_connection": "docintel"
+  },
+  "chunk_embed_index_deploy": {
+    "chunk_size": 526,
+    "chunk_overlap": 100,
+    "asset_name": "shoresh-1",
+    "data_source": "azureml://datastores/workspaceblobstore/paths/Data",
+    "embeddings_model": "azure_open_ai://deployment/text-embedding-ada-002/model/text-embedding-ada-002",
+    "endpoint_name": "shoresh-batch-endpoint-1",
+    "deployment_name": "shoresh-deploy-1"
+  },
+  
+  "flow": {
+    "flow_endpoint_name": "flow-online-endpoint-1",
+    "flow_deployment_name": "flow-deploy-1",
+    "flow_path": "Flow/ChatFlow" 
+  }
+}
