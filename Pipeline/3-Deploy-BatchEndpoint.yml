@@ -1,0 +1,71 @@
+trigger: none  
+
+pool:  
+  vmImage: 'ubuntu-latest'  
+  
+variables:  
+  - group: vg1  
+  
+stages:  
+  - stage: DeployBatchPipeline   
+    displayName: 'Stage 3 - Deploy Batch Pipeline and Test Endpoint'  
+    dependsOn: []  
+    jobs: 
+      - job: ApproveDeployment  
+        displayName: Approve for Batch Endpoint Deployment  
+        pool: server  
+        steps:  
+          - task: ManualValidation@0  
+            inputs:  
+              notifyUsers: |  
+                youremail@example.com  
+              instructions: "Approve the deployment for Batch Endpoint."  
+              onTimeout: 'reject'  # Reject if approval not given in time   
+      - job: DeployBatchPipeline  
+        displayName: 'Deploy Batch Pipeline and Test Endpoint' 
+        dependsOn: ApproveDeployment 
+        steps:  
+          - task: UsePythonVersion@0  
+            inputs:  
+              versionSpec: '3.10'  
+              addToPath: true  
+  
+          - script: |  
+              python -m pip install --upgrade pip  
+              python -m pip install azure-identity  
+              python -m pip install azure-ai-ml  
+              python -m pip install python-dotenv  
+            displayName: 'Install dependencies'  
+  
+          - task: DownloadPipelineArtifact@2  
+            inputs:  
+              buildType: 'specific'  
+              project: 'SmartDocsPipeline'  
+              definition: '34'  
+              specificBuildWithTriggering: true  
+              artifactName: 'environment'  
+              targetPath: '$(Pipeline.Workspace)'  
+  
+          - task: DownloadPipelineArtifact@2  
+            inputs: 
+              buildType: 'specific'  
+              project: 'SmartDocsPipeline'  
+              definition: '35'  
+              specificBuildWithTriggering: true    
+              artifactName: 'pipeline_job_id'  
+              targetPath: '$(Pipeline.Workspace)'  
+  
+          - task: AzureCLI@2  
+            inputs:  
+              azureSubscription: $(SERVICE_CONNECTION)  
+              scriptType: bash  
+              scriptLocation: inlineScript  
+              inlineScript: |  
+                echo "Logging into Azure..."  
+                az account show  
+                az extension add --upgrade --name ml -y  
+  
+                echo "Running deploy and test pipeline script..."  
+                python ./Chunk-Embedd-Index/deploy_and_test_pipeline.py  
+            displayName: 'Authenticate and Run deploy and test pipeline script' 
+  

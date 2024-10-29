@@ -1,0 +1,11 @@
+azure-ai-ml==1.16.1
+promptflow-devkit==1.16.1
+promptflow-azure==1.16.1
+promptflow-tools==1.4.0
+azure-identity==1.16.0
+azureml-mlflow==1.58.0
+keyrings.alt==5.0.2
+python-dotenv==1.0.1
+bs4==0.0.2
+langdetect == 1.0.9
+promptflow-vectordb[azure] == 0.2.9

@@ -1,0 +1,214 @@
+
+trigger: none
+
+pool:  
+  vmImage: 'ubuntu-latest'  
+
+variables:  
+  - group: vg1 
+
+stages:  
+
+  - stage: ChunkEmbeddIndex   
+    displayName: 'Stage 2 - Chunk and Embed Index'  
+    dependsOn: []
+    jobs:  
+      - job: ChunkEmbeddIndex  
+        displayName: 'Chunk and Embed Index'  
+        steps:  
+          - task: UsePythonVersion@0  
+            inputs:  
+              versionSpec: '3.10'  
+              addToPath: true  
+          - script: |  
+              python -m pip install --upgrade pip  
+              python -m pip install azure-identity==1.19.0
+              python -m pip install azure-ai-ml==1.21.1
+              python -m pip install python-dotenv==1.0.1
+            displayName: 'Install dependencies' 
+          - task: DownloadPipelineArtifact@2  
+            inputs:  
+              buildType: 'specific'  
+              project: 'SmartDocsPipeline'  
+              definition: '39'  
+              specificBuildWithTriggering: true  
+              artifactName: 'environment'  
+              targetPath: '$(Pipeline.Workspace)'   
+          - task: PublishPipelineArtifact@1
+            inputs:
+              targetPath: '$(Pipeline.Workspace)'  # Path where the environment artifact was downloaded
+              artifactName: 'environment' 
+          - task: AzureCLI@2  
+            inputs:  
+              azureSubscription: $(SERVICE_CONNECTION)  
+              scriptType: bash  
+              scriptLocation: inlineScript  
+              inlineScript: |  
+                echo "Logging into Azure..."  
+                az account show  
+                az extension add --upgrade --name ml -y  
+                echo "Running chunk and embed index script..."  
+                python ./Chunk-Embedd-Index/chunk_embed_index.py  
+            displayName: 'Authenticate and Run chunk and embed index script'  
+          - task: PublishPipelineArtifact@1  
+            displayName: 'Publish pipeline_job_id'  
+            inputs:  
+              targetPath: 'pipeline_job_id.txt'  
+              artifact: 'pipeline_job_id' 
+  - stage: DeployBatchPipeline   
+    displayName: 'Stage 3 - Deploy Batch Pipeline and Test Endpoint'  
+    dependsOn: ChunkEmbeddIndex  
+    jobs: 
+      - job: ApproveDeployment  
+        displayName: Approve for Batch Endpoint Deployment  
+        pool: server  
+        steps:  
+          - task: ManualValidation@0  
+            inputs:  
+              notifyUsers: |  
+                youremail@example.com  
+              instructions: "Approve the deployment for Batch Endpoint."  
+              onTimeout: 'reject'  # Reject if approval not given in time   
+      - job: DeployBatchPipeline  
+        displayName: 'Deploy Batch Pipeline and Test Endpoint' 
+        dependsOn: ApproveDeployment 
+        steps:  
+          - task: UsePythonVersion@0  
+            inputs:  
+              versionSpec: '3.10'  
+              addToPath: true  
+  
+          - script: |  
+              python -m pip install --upgrade pip  
+              python -m pip install azure-identity==1.19.0
+              python -m pip install azure-ai-ml==1.21.1
+              python -m pip install python-dotenv==1.0.1
+            displayName: 'Install dependencies'  
+  
+          - task: DownloadPipelineArtifact@2  
+            inputs:    
+              artifactName: 'environment'  
+              targetPath: '$(Pipeline.Workspace)'   
+  
+          - task: DownloadPipelineArtifact@2  
+            inputs:    
+              artifactName: 'pipeline_job_id'  
+              targetPath: '$(Pipeline.Workspace)'  
+  
+          - task: AzureCLI@2  
+            inputs:  
+              azureSubscription: $(SERVICE_CONNECTION)  
+              scriptType: bash  
+              scriptLocation: inlineScript  
+              inlineScript: |  
+                echo "Logging into Azure..."  
+                az account show  
+                az extension add --upgrade --name ml -y  
+  
+                echo "Running deploy and test pipeline script..."  
+                python ./Chunk-Embedd-Index/deploy_and_test_pipeline.py  
+            displayName: 'Authenticate and Run deploy and test pipeline script' 
+  - stage: ChatFlow   
+    displayName: 'Stage 4 - Run Chat Flow'  
+    dependsOn: ChunkEmbeddIndex
+    jobs:  
+      - job: RunChatFlow  
+        displayName: 'Run Chat Flow' 
+        steps:   
+          - task: UsePythonVersion@0  
+            inputs:  
+              versionSpec: '3.10'  
+              addToPath: true  
+  
+          - script: |  
+              python -m pip install --upgrade pip  
+              python -m pip install azure-identity==1.19.0
+              python -m pip install azure-ai-ml==1.21.1
+              python -m pip install python-dotenv==1.0.1 
+              python -m pip install -r Pipeline/requirements/flow_requirements.txt
+              pip freeze > requirements_flow.txt
+            displayName: 'Install dependencies'  
+          - task: DownloadPipelineArtifact@2  
+            inputs:    
+              artifactName: 'environment'  
+              targetPath: '$(Pipeline.Workspace)'   
+          - task: AzureCLI@2  
+            retryCountOnTaskFailure: 2
+            inputs:  
+              azureSubscription: $(SERVICE_CONNECTION)  
+              scriptType: bash  
+              scriptLocation: inlineScript  
+              inlineScript: |  
+                echo "Logging into Azure..."  
+                az account show  
+                echo "Generate flow.dag.yml" 
+                python ./Flow/generateyml.py  
+                echo "Run Flow" 
+                python ./Flow/chat_flow_and_eval.py  
+            displayName: 'Authenticate and Run Chat Flow script' 
+
+          - task: PublishPipelineArtifact@1  
+            displayName: 'Publish DeployFlow'  
+            inputs:  
+              targetPath: 'deploy.json'  
+              artifact: 'DeployFlow'    
+  - stage: DeployFlow   
+    displayName: 'Stage 5 - Deploy Flow to Manged online endpoint'  
+    dependsOn: ChatFlow
+    jobs: 
+      - job: ApproveDeployment  
+        displayName: Approve for Online Endpoint Deployment of Flow 
+        pool: server  
+        steps:  
+          - task: ManualValidation@0  
+            inputs:  
+              notifyUsers: |  
+                youremail@example.com  
+              instructions: "Approve the deployment for Batch Endpoint."  
+              onTimeout: 'reject'  # Reject if approval not given in time   
+      - job: DeployOnline   
+        displayName: 'Deploy Online flow and Test Endpoint' 
+        dependsOn: ApproveDeployment 
+        steps:  
+          - task: UsePythonVersion@0  
+            inputs:  
+              versionSpec: '3.10'  
+              addToPath: true  
+  
+          - script: |  
+              python -m pip install --upgrade pip  
+              python -m pip install azure-identity==1.19.0  
+              python -m pip install azure-ai-ml==1.21.1  
+              python -m pip install python-dotenv==1.0.1
+              # azure dependencies
+              python -m pip install azure-core==1.31.0
+              python -m pip install azure-mgmt-authorization==4.0.0
+              python -m pip install azure-mgmt-resource==23.2.0
+              python -m pip install azure-mgmt-search==9.1.0
+              python -m pip install azure-mgmt-cognitiveservices==13.5.0
+              
+            displayName: 'Install dependencies'  
+  
+          - task: DownloadPipelineArtifact@2  
+            inputs:    
+              artifactName: 'environment'  
+              targetPath: '$(Pipeline.Workspace)' 
+
+          - task: DownloadPipelineArtifact@2  
+            inputs: 
+              artifactName: 'DeployFlow'  
+              targetPath: '$(Pipeline.Workspace)'  
+  
+          - task: AzureCLI@2  
+            inputs:  
+              azureSubscription: $(SERVICE_CONNECTION)  
+              scriptType: bash  
+              scriptLocation: inlineScript  
+              inlineScript: |  
+                echo "Logging into Azure..."  
+                az account show  
+                az extension add --upgrade --name ml -y  
+                python ./Flow/generateyml.py 
+                echo "Running deploy and test pipeline script..."  
+                python ./Flow/deploy_test_flow.py 
+            displayName: 'Authenticate and Run deploy and test pipeline script'

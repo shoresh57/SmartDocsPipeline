@@ -1,0 +1,71 @@
+trigger: none  
+  
+
+pool:  
+  vmImage: 'ubuntu-latest'  
+  
+variables:  
+  - group: vg1
+  
+stages:  
+  
+  - stage: ChatFlow   
+    displayName: 'Stage 4 - Run Chat Flow'  
+    dependsOn: []
+    jobs:  
+      - job: RunChatFlow  
+        displayName: 'Run Chat Flow' 
+        steps:   
+          - task: UsePythonVersion@0  
+            inputs:  
+              versionSpec: '3.10'  
+              addToPath: true  
+  
+          - script: |  
+              python -m pip install --upgrade pip  
+              python -m pip install azure-identity  
+              python -m pip install azure-ai-ml  
+              python -m pip install python-dotenv  
+              python -m pip install -r Pipeline/requirements/flow_requirements.txt
+              pip freeze > requirements_flow.txt
+            displayName: 'Install dependencies'  
+  
+          - task: DownloadPipelineArtifact@2  
+            inputs:  
+              buildType: 'specific'  
+              project: 'SmartDocsPipeline'  
+              definition: '34'  
+              specificBuildWithTriggering: true  
+              artifactName: 'environment'  
+              targetPath: '$(Pipeline.Workspace)'    
+  
+          - task: AzureCLI@2  
+            retryCountOnTaskFailure: 2
+            inputs:  
+              azureSubscription: $(SERVICE_CONNECTION)  
+              scriptType: bash  
+              scriptLocation: inlineScript  
+              inlineScript: |  
+                echo "Logging into Azure..."  
+                az account show  
+                echo "Generate flow.dag.yml" 
+                python ./Flow/generateyml.py  
+                echo "Run Flow" 
+                python ./Flow/chat_flow_and_eval.py  
+            displayName: 'Authenticate and Run Chat Flow script' 
+
+          - task: PublishPipelineArtifact@1  
+            displayName: 'Publish DeployFlow'  
+            inputs:  
+              targetPath: 'deploy.json'  
+              artifact: 'DeployFlow'    
+          - task: PublishBuildArtifacts@1  
+            displayName: 'Publish DeployFlow as artifact'  
+            inputs:  
+              PathtoPublish: '$(Build.ArtifactStagingDirectory)'  
+              ArtifactName: 'DeployFlow'  
+          - task: PublishPipelineArtifact@1
+            inputs:
+              targetPath: 'requirements_flow.txt'
+              artifact: 'flow-requirements'
+            displayName: 'Publish requirements_flow.txt'     

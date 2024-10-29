@@ -1,0 +1,54 @@
+trigger: none
+
+pool:  
+  vmImage: 'ubuntu-latest'  
+
+variables:  
+  - group: vg1 
+
+stages:  
+  - stage: ProvisionResources    
+    displayName: 'Stage 1 - Provision Resources'  
+    jobs:  
+      - job: Provision  
+        displayName: 'Provision Resources'  
+        steps:  
+          - task: UsePythonVersion@0  
+            inputs:  
+              versionSpec: '3.10'  
+              addToPath: true  
+          - script: |  
+              python -m pip install --upgrade pip  
+              # Uncomment and add any general-purpose packages your script uses  
+              # pip install -r requirements.txt  
+            displayName: 'Install dependencies'  
+          - task: AzureCLI@2  
+            inputs:  
+              azureSubscription: $(SERVICE_CONNECTION)  
+              scriptType: bash  
+              scriptLocation: inlineScript  
+              inlineScript: |  
+                echo "Logging into Azure..."  
+                az account show  
+                az extension add --upgrade --name ml -y  
+                echo "Running provisioning script..."  
+                python ./Infra/provision_resources.py  
+            displayName: 'Authenticate and Run provisioning script'  
+            env:  
+              SERVICE_CONNECTION: $(SERVICE_CONNECTION)  
+              SUBSCRIPTION_ID: $(SUBSCRIPTION_ID)  
+              RESOURCE_GROUP: $(RESOURCE_GROUP)  
+              LOCATION: $(LOCATION)  
+              SERVICE_PRINCIPAL_ID: $(SERVICE_PRINCIPAL_ID)  
+              PROVISION_RESOURCE: $(PROVISION_RESOURCE)  
+          - task: CopyFiles@2  
+            displayName: "Save .env"  
+            inputs:  
+              SourceFolder: '$(Build.SourcesDirectory)'  
+              Contents: '.env'  
+              TargetFolder: '$(Build.ArtifactStagingDirectory)'  
+          - task: PublishBuildArtifacts@1  
+            displayName: 'Publish .env as artifact'  
+            inputs:  
+              PathtoPublish: '$(Build.ArtifactStagingDirectory)'  
+              ArtifactName: 'environment'  

@@ -1,0 +1,63 @@
+trigger: none  
+
+  
+pool:  
+  vmImage: 'ubuntu-latest'  
+  
+variables:  
+  - group: vg1 
+  
+stages:  
+  - stage: ChunkEmbeddIndex   
+    displayName: 'Stage 2 - Chunk and Embed Index'  
+    dependsOn: []  
+    jobs:  
+      - job: ChunkEmbeddIndex  
+        displayName: 'Chunk and Embed Index'  
+        steps:  
+          - task: UsePythonVersion@0  
+            inputs:  
+              versionSpec: '3.10'  
+              addToPath: true  
+          - script: |  
+              python -m pip install --upgrade pip  
+              python -m pip install azure-identity
+              python -m pip install azure-ai-ml
+              python -m pip install python-dotenv
+              pip freeze > requirements_ChunkEmbeddIndex.txt
+            displayName: 'Install dependencies' 
+          - task: DownloadPipelineArtifact@2  
+            inputs:  
+              buildType: 'specific'  
+              project: 'SmartDocsPipeline'  
+              definition: '34'  
+              specificBuildWithTriggering: true  
+              artifactName: 'environment'  
+              targetPath: '$(Pipeline.Workspace)'    
+          - task: AzureCLI@2  
+            inputs:  
+              azureSubscription: $(SERVICE_CONNECTION)  
+              scriptType: bash  
+              scriptLocation: inlineScript  
+              inlineScript: |  
+                echo "Logging into Azure..."  
+                az account show  
+                az extension add --upgrade --name ml -y  
+                echo "Running chunk and embed index script..."  
+                python ./Chunk-Embedd-Index/chunk_embed_index.py  
+            displayName: 'Authenticate and Run chunk and embed index script'  
+          - task: PublishPipelineArtifact@1  
+            displayName: 'Publish pipeline_job_id'  
+            inputs:  
+              targetPath: 'pipeline_job_id.txt'  
+              artifact: 'pipeline_job_id' 
+          - task: PublishBuildArtifacts@1  
+            displayName: 'Publish Publish pipeline_job_id as artifact'  
+            inputs:  
+              PathtoPublish: '$(Build.ArtifactStagingDirectory)'  
+              ArtifactName: 'pipeline_job_id' 
+          - task: PublishPipelineArtifact@1
+            inputs:
+              targetPath: 'requirements_ChunkEmbeddIndex.txt'
+              artifact: 'requirements'
+            displayName: 'Publish requirements.txt'
