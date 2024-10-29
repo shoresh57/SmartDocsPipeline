@@ -1,0 +1,7 @@
+promptflow[azure]
+promptflow
+promptflow-tools
+python-dotenv
+bs4
+langdetect
+promptflow-vectordb[azure]

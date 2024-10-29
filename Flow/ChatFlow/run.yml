@@ -1,0 +1,10 @@
+$schema: https://azuremlschemas.azureedge.net/promptflow/latest/Run.schema.json
+flow: .
+data: ../../Data/data.jsonl
+
+column_mapping:
+  query: ${data.question}
+
+# define instance type only work for compute session.
+resources:
+  instance_type: Standard_D4a_v4

@@ -1,0 +1,194 @@
+id: template_chat_flow
+name: Template Chat Flow
+inputs:
+  chat_history:
+    type: list
+    default: []
+    is_chat_input: false
+  query:
+    type: string
+    default: What does Windows 10 Provides?
+    is_chat_input: false
+outputs:
+  reply:
+    type: string
+    reference: ${generateReply.output}
+    is_chat_output: true
+  documents:
+    type: string
+    reference: ${selectChunks.output}
+nodes:
+- name: formatRewriteIntentInputs
+  type: python
+  source:
+    type: code
+    path: formatConversationForIntentRewriting.py
+  inputs:
+    history: ${inputs.chat_history}
+    max_tokens: 2000
+    query: ${inputs.query}
+  use_variants: false
+- name: rewriteIntent
+  type: llm
+  source:
+    type: code
+    path: ragcore/prompt_templates/rewriteIntent.jinja2
+  inputs:
+    deployment_name: gpt-4o
+    temperature: 0.7
+    top_p: 0.95
+    max_tokens: 120
+    presence_penalty: 0
+    frequency_penalty: 0
+    conversation: ${formatRewriteIntentInputs.output}
+  provider: AzureOpenAI
+  connection: aoai
+  api: chat
+  module: promptflow.tools.aoai
+  use_variants: false
+- name: extractSearchIntent
+  type: python
+  source:
+    type: code
+    path: extractSearchIntent.py
+  inputs:
+    intent: ${rewriteIntent.output}
+  use_variants: false
+- name: querySearchResource
+  type: python
+  source:
+    type: package
+    tool: promptflow_vectordb.tool.common_index_lookup.search
+  inputs:
+    mlindex_content: >
+      embeddings:
+        api_base: https://eastus.api.cognitive.microsoft.com/
+        api_type: azure
+        api_version: 2023-07-01-preview
+        batch_size: '1'
+        connection:
+          id: /subscriptions/e1b2a578-b466-409c-9466-cf5a7852d9ae/resourceGroups/scratchllmops/providers/Microsoft.MachineLearningServices/workspaces/aml-iix/connections/aoai
+        connection_type: workspace_connection
+        deployment: text-embedding-ada-002
+        dimension: 1536
+        kind: open_ai
+        model: text-embedding-ada-002
+        schema_version: '2'
+      index:
+        api_version: 2024-05-01-preview
+        connection:
+          id: /subscriptions/e1b2a578-b466-409c-9466-cf5a7852d9ae/resourceGroups/scratchllmops/providers/Microsoft.MachineLearningServices/workspaces/aml-iix/connections/aisearch
+        connection_type: workspace_connection
+        endpoint: https://aisearch-iix.search.windows.net/
+        engine: azure-sdk
+        field_mapping:
+          content: content
+          embedding: contentVector
+          metadata: meta_json_string
+        index: shoresh1
+        kind: acs
+        semantic_configuration_name: azureml-default
+    queries: ${extractSearchIntent.output}
+    query_type: Hybrid + semantic
+    top_k: 5
+  use_variants: false
+- name: chunkDocuments
+  type: python
+  source:
+    type: code
+    path: chunkDocuments.py
+  inputs:
+    data_source: Azure AI Search
+    max_tokens: 1050
+    queries: ${extractSearchIntent.output}
+    query_type: Hybrid (vector + keyword)
+    results: ${querySearchResource.output}
+    top_k: 5
+  use_variants: false
+- name: selectChunks
+  type: python
+  source:
+    type: code
+    path: filterChunks.py
+  inputs:
+    min_score: 0.3
+    results: ${chunkDocuments.output}
+    top_k: 5
+  use_variants: false
+- name: shouldGenerateReply
+  type: python
+  source:
+    type: code
+    path: shouldGenerateReply.py
+  inputs:
+    chunks: ${selectChunks.output}
+    queries: ${extractSearchIntent.output}
+  use_variants: false
+- name: formatGenerateReplyInputs
+  type: python
+  source:
+    type: code
+    path: formatReplyInputs.py
+  inputs:
+    chunks: ${selectChunks.output}
+    history: ${inputs.chat_history}
+    max_conversation_tokens: 2000
+    max_tokens: 5000
+    query: ${inputs.query}
+  use_variants: false
+- name: generateReply
+  use_variants: true
+node_variants:
+  generateReply:
+    default_variant_id: variant_0
+    variants:
+      variant_0:
+        node:
+          name: generateReply
+          type: llm
+          source:
+            type: code
+            path: ragcore/prompt_templates/generateReply.jinja2
+          inputs:
+            inputs: ${formatGenerateReplyInputs.output}
+            deployment_name: gpt-4o
+            temperature: 0.7
+            top_p: 0.95
+            max_tokens: 800
+            presence_penalty: 0
+            frequency_penalty: 0
+            indomain: "True"
+            role_info: You are an AI assistant that helps people find information.
+          provider: AzureOpenAI
+          connection: aoai
+          api: chat
+          module: promptflow.tools.aoai
+          activate:
+            when: ${shouldGenerateReply.output}
+            is: true
+      variant_1:
+        node:
+          name: generateReply
+          type: llm
+          source:
+            type: code
+            path: generateReply__variant_1.jinja2
+          inputs:
+            inputs: ${formatGenerateReplyInputs.output}
+            deployment_name: gpt-4o
+            temperature: 0.2
+            top_p: 0.95
+            max_tokens: 1000
+            presence_penalty: 0
+            frequency_penalty: 0
+            indomain: "True"
+            role_info: You are an AI assistant that helps people find information.
+          provider: AzureOpenAI
+          connection: aoai
+          api: chat
+          module: promptflow.tools.aoai
+          activate:
+            when: ${shouldGenerateReply.output}
+            is: true
+environment:
+  python_requirements_txt: requirements.txt
