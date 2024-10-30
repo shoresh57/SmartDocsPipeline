@@ -33,7 +33,8 @@ def load_env_vars():
         "ML_WORKSPACE_NAME": os.getenv("ML_WORKSPACE_NAME"),  
         "OPENAI_CONNECTION_NAME": os.getenv("OPENAI_CONNECTION_NAME"),  
         "AISEARCH_CONNECTION_NAME": os.getenv("AISEARCH_CONNECTION_NAME"),  
-        "DOCUMENT_INTELLIGENCE_CONNECTION_NAME": os.getenv("DOCUMENT_INTELLIGENCE_CONNECTION_NAME"),  
+        "DOCUMENT_INTELLIGENCE_CONNECTION_NAME": os.getenv("DOCUMENT_INTELLIGENCE_CONNECTION_NAME"), 
+        "STORAGE_ACCOUNT_NAME":os.getenv("STORAGE_ACCOUNT_NAME"), 
     }  
   
 def run_pipeline(params):  
@@ -164,7 +165,10 @@ def main():
     env_vars = load_env_vars()  
     parsed_config = parse_config_file()  
     params = {**env_vars, **parsed_config}  
-  
+    subprocess.run(f"az storage account update \
+        --name {params['STORAGE_ACCOUNT_NAME']} \
+        --resource-group {params['RESOURCE_GROUP']} \
+        --allow-shared-key-access true", shell=True)
     run_pipeline(params)  
   
 if __name__ == "__main__":  
